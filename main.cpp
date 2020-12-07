@@ -1,16 +1,19 @@
 #include <iostream>
 #include "ElfReader.h"
 #include "ElfRebuilder.h"
+#include "ElfReader64.h"
+#include "ElfRebuilder64.h"
 #include "FDebug.h"
 #include <getopt.h>
 
 
-const char* short_options = "hdm:s:o:";
+const char* short_options = "hdb:s:a:o:";
 const struct option long_options[] = {
         {"help", 0, NULL, 'h'},
         {"debug", 0, NULL, 'd'},
-        {"memso", 1, NULL, 'm'},
+        {"baseso", 1, NULL, 'b'},
         {"source", 1, NULL, 's'},
+        {"arch", 1, NULL, 'a'},
         {"output", 1, NULL, 'o'},
         {nullptr, 0, nullptr, 0}
 };
@@ -20,8 +23,9 @@ int main(int argc, char* argv[]) {
     int c;
 
     ElfReader elf_reader;
+    ElfReader64 elf_reader64;
 
-    std::string source, output;
+    std::string source, output, arch;
     bool isValidArg = true;
     while((c = getopt_long(argc, argv, short_options, long_options, nullptr)) != -1) {
         switch (c) {
@@ -31,10 +35,13 @@ int main(int argc, char* argv[]) {
             case 's':
                 source = optarg;
                 break;
+            case 'a':
+                arch = optarg;
+                break;
             case 'o':
                 output = optarg;
                 break;
-            case 'm': {
+            case 'b': {
                 auto is16Bit = [](const char* c) {
                     auto len = strlen(c);
                     if(len > 2) {
@@ -49,13 +56,12 @@ int main(int argc, char* argv[]) {
                     }
                     return !is10bit;
                 };
-#ifndef __SO64__
                 auto base = strtoul(optarg, 0, is16Bit(optarg) ? 16: 10);
-#else
-                auto base = strtoull(optarg, 0, is16Bit(optarg) ? 16: 10);
-#endif
+                auto base64 = strtoull(optarg, 0, is16Bit(optarg) ? 16: 10);
                 elf_reader.setDumpSoFile(true);
                 elf_reader.setDumpSoBaseAddr(base);
+                elf_reader64.setDumpSoFile(true);
+                elf_reader64.setDumpSoBaseAddr(base64);
             }
                 break;
             default:
@@ -75,29 +81,51 @@ int main(int argc, char* argv[]) {
     }
     auto fd = fileno(file);
 
-    printf("start to rebuild elf file\n");
-    elf_reader.setSource(source.c_str(), fd);
-
-    if(!elf_reader.Load()) {
-        printf("source so file is invalid\n");
-        return -1;
-    }
-
-    ElfRebuilder elf_rebuilder(&elf_reader);
-    if(!elf_rebuilder.Rebuild()) {
-        printf("error occured in rebuilding elf file\n");
-        return -1;
-    }
-    fclose(file);
-
-    if (!output.empty()) {
-        file = fopen(output.c_str(), "wb+");
-        if(nullptr == file) {
-            printf("output so file cannot write !!!\n");
+    printf("start to rebuild elf file arch: %s\n", arch.c_str());
+    if (arch == "32") {
+        elf_reader.setSource(source.c_str(), fd);
+        if(!elf_reader.Load()) {
+            printf("source so file is invalid\n");
             return -1;
         }
-        fwrite(elf_rebuilder.getRebuildData(), elf_rebuilder.getRebuildSize(), 1, file);
+        ElfRebuilder elf_rebuilder(&elf_reader);
+        if(!elf_rebuilder.Rebuild()) {
+            printf("error occured in rebuilding elf file\n");
+            return -1;
+        }
         fclose(file);
+
+        if (!output.empty()) {
+            file = fopen(output.c_str(), "wb+");
+            if(nullptr == file) {
+                printf("output so file cannot write !!!\n");
+                return -1;
+            }
+            fwrite(elf_rebuilder.getRebuildData(), elf_rebuilder.getRebuildSize(), 1, file);
+            fclose(file);
+        }
+    } else if (arch == "64") {
+        elf_reader64.setSource(source.c_str(), fd);
+        if(!elf_reader64.Load()) {
+            printf("source so file is invalid\n");
+            return -1;
+        }
+        ElfRebuilder64 elf_rebuilder64(&elf_reader64);
+        if(!elf_rebuilder64.Rebuild()) {
+            printf("error occured in rebuilding elf file\n");
+            return -1;
+        }
+        fclose(file);
+
+        if (!output.empty()) {
+            file = fopen(output.c_str(), "wb+");
+            if(nullptr == file) {
+                printf("output so file cannot write !!!\n");
+                return -1;
+            }
+            fwrite(elf_rebuilder64.getRebuildData(), elf_rebuilder64.getRebuildSize(), 1, file);
+            fclose(file);
+        }
     }
 
     printf("Done!!!\n");
@@ -106,13 +134,14 @@ int main(int argc, char* argv[]) {
 
 void useage() {
     printf("SoFixer v0.2 author F8LEFT(currwin)\n");
-    printf("Useage: SoFixer <option(s)> -s sourcefile -o generatefile\n");
+    printf("Useage: SoFixer <option(s)> -s sourcefile -a arch -o generatefile\n");
     printf(" try rebuild shdr with phdr\n");
     printf(" Options are:\n");
 
     printf("  -d --debug                                 Show debug info\n");
-    printf("  -m --memso memBaseAddr(16bit format)       Source file is dump from memory from address x\n");
+    printf("  -b --baseso memBaseAddr(16bit format)      Source file is dump from memory from address x\n");
     printf("  -s --source sourceFilePath                 Source file path\n");
+    printf("  -a --arch Arch(32bit or 64bit)             Source file arch\n");
     printf("  -o --output generateFilePath               Generate file path\n");
     printf("  -h --help                                  Display this information\n");
 

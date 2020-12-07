@@ -49,5 +49,4 @@ typedef Elf64_Word Elf_Word;
 // itself at the start of a page.
 #define PAGE_END(x)    PAGE_START((x) + (PAGE_SIZE-1))
 #endif
-
 #endif //FAOATDUMP_EXELF_H
